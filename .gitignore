@@ -1,0 +1,21 @@
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+out/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+.gosom-build/
+bin/
+Makefile.local
+Prospector.app/
+
+# Your real campaign settings (name, phone, niches). Never commit.
+config.local.yaml
+.DS_Store
