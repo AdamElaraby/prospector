@@ -31,8 +31,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import db
+from . import db, progress, qualify
 from .audit import describe_issues, domain_of
+from .opportunity import describe_gaps, gap_labels
 from .config import ROOT, load_config
 from .config_io import KNOWN_KEYS, read_env_keys, update_config, write_env_keys
 
@@ -40,6 +41,15 @@ HERE = Path(__file__).resolve().parent
 TOKEN = secrets.token_urlsafe(24)
 
 RUNNABLE = {"find", "audit", "draft", "send", "wa", "export"}
+
+STAGE_LABEL = {
+    "REVIEWED": "reviewed",
+    "CONTACTED": "conversation started",
+    "PROPOSAL_REQUESTED": "proposal requested",
+    "QUOTED": "quote sent",
+    "WON": "won",
+    "LOST": "lost",
+}
 
 
 # --------------------------------------------------------------------- job runner
@@ -55,6 +65,9 @@ class Job:
         self.command: list[str] = []
         self.returncode: int | None = None
         self.running = False
+        # The last progress marker the subprocess emitted. This is what drives
+        # the bar, so it is real position, never a timer pretending to be one.
+        self.progress: dict | None = None
 
     def start(self, args: list[str]) -> tuple[bool, str]:
         with self.lock:
@@ -64,9 +77,17 @@ class Job:
             self.returncode = None
             self.running = True
             self.command = args
+            self.progress = None
 
         cmd = [sys.executable, "-m", "prospector.cli", *args]
-        env = {**os.environ, "COLUMNS": "160", "PYTHONUNBUFFERED": "1"}
+        # PROSPECTOR_PROGRESS turns on the machine-readable markers the bar
+        # reads. Only set here, so a person at a terminal never sees them.
+        env = {
+            **os.environ,
+            "COLUMNS": "160",
+            "PYTHONUNBUFFERED": "1",
+            "PROSPECTOR_PROGRESS": "1",
+        }
 
         def pump() -> None:
             try:
@@ -76,7 +97,14 @@ class Job:
                 )
                 assert self.proc.stdout is not None
                 for line in self.proc.stdout:
-                    self.lines.append(line.rstrip("\n"))
+                    line = line.rstrip("\n")
+                    payload = progress.parse(line)
+                    if payload is not None:
+                        # A marker is state, not output: showing it in the log
+                        # would bury the stage's real messages in JSON.
+                        self.progress = payload
+                        continue
+                    self.lines.append(line)
                 self.proc.wait()
                 self.returncode = self.proc.returncode
             except Exception as exc:  # surface the failure in the UI log
@@ -84,6 +112,8 @@ class Job:
                 self.returncode = -1
             finally:
                 self.running = False
+                if self.progress:
+                    self.progress = {**self.progress, "finished": True}
 
         threading.Thread(target=pump, daemon=True).start()
         return True, "started"
@@ -101,6 +131,7 @@ class Job:
             "command": self.command,
             "returncode": self.returncode,
             "lines": list(self.lines),
+            "progress": self.progress,
         }
 
 
@@ -126,6 +157,12 @@ def state_payload() -> dict[str, Any]:
             conn, "SELECT channel, status, COUNT(*) n FROM messages GROUP BY channel, status"
         )
         suppressed = conn.execute("SELECT COUNT(*) n FROM suppression").fetchone()["n"]
+        money = db.revenue(conn)
+        grades = _rows(
+            conn,
+            "SELECT lead_grade, COUNT(*) n FROM leads WHERE qualified = 1 "
+            "AND lead_grade IS NOT NULL GROUP BY lead_grade ORDER BY lead_grade",
+        )
 
     sender = dict(cfg.get("sender", {}) or {})
     search = cfg.get("search", {}) or {}
@@ -140,41 +177,79 @@ def state_payload() -> dict[str, Any]:
             "locations": list(search.get("locations") or []),
             "max_results_per_query": search.get("max_results_per_query"),
             "source": search.get("source"),
+            "apify_actor_id": cfg.get("search.apify.actor_id"),
         },
         "qualify": {
             "bad_site_threshold": cfg.get("qualify.bad_site_threshold"),
             "min_review_count": cfg.get("qualify.min_review_count"),
             "include_no_site": cfg.get("qualify.include_no_site"),
             "include_bad_site": cfg.get("qualify.include_bad_site"),
+            "min_lead_score": cfg.get("qualify.min_lead_score", 55),
+            "min_activity_score": cfg.get("qualify.min_activity_score", 12),
+            "min_problem_score": cfg.get("qualify.min_problem_score", 10),
         },
         "llm": {"provider": cfg.get("llm.provider"), "model": cfg.get("llm.model")},
         "keys": read_env_keys(),
         "counts": counts,
         "messages": message_counts,
         "suppressed": suppressed,
+        "grades": {g["lead_grade"]: g["n"] for g in grades},
+        "revenue": money,
+        "stage_labels": STAGE_LABEL,
+        "pipeline_currency": cfg.get("pipeline.currency") or money.get("currency") or "",
         "job": JOB.snapshot(),
     }
 
 
-def leads_payload(status: str | None, limit: int) -> list[dict]:
+def leads_payload(
+    status: str | None,
+    limit: int,
+    category: str | None = None,
+    day: str | None = None,
+    since: str | None = None,
+) -> list[dict]:
     cfg = _cfg()
-    sql = """
+    sql = f"""
         SELECT l.id, l.name, l.category, l.city, l.phone, l.website, l.rating,
+               l.created_at, l.updated_at,
+               {db.LOCAL_DAY_SQL} AS day,
+               {db.CATEGORY_SQL} AS group_category,
+               a.audited_at,
                l.review_count, l.status, l.lead_type, l.skip_reason,
-               a.score, a.headline_issue,
+               l.lead_score, l.lead_grade,
+               a.score, a.headline_issue, a.opportunity, a.gaps_json,
+               a.has_booking, a.has_quote_form, a.has_services, a.has_contact,
+               p.stage AS pipeline_stage, p.won_amount, p.quote_amount,
                (SELECT value FROM contacts c WHERE c.lead_id=l.id AND c.kind='email' LIMIT 1) AS email,
                (SELECT channel FROM messages m WHERE m.lead_id=l.id LIMIT 1) AS channel
-        FROM leads l LEFT JOIN audits a ON a.lead_id = l.id
+        FROM leads l
+        LEFT JOIN audits a ON a.lead_id = l.id
+        LEFT JOIN pipeline p ON p.lead_id = l.id
     """
+    where: list[str] = []
     params: list[Any] = []
     if status and status != "ALL":
-        sql += " WHERE l.status = ?"
+        where.append("l.status = ?")
         params.append(status)
-    # Best leads first: qualified before skipped, and a business with no website
-    # at all outranks a merely weak one no matter what the audit score says.
+    if category and category != "ALL":
+        where.append(f"{db.CATEGORY_SQL} = ?")
+        params.append(category)
+    if day and day != "ALL":
+        where.append(f"{db.LOCAL_DAY_SQL} = ?")
+        params.append(day)
+    if since:
+        where.append(f"{db.LOCAL_DAY_SQL} >= ?")
+        params.append(since)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    # Newest batch first, then best lead within it, scored on qualification
+    # rather than on how broken the site is: a dead business with a terrible
+    # website is not a better lead than a busy one with a mediocre site. The
+    # day comes first so the UI can draw a heading each time it changes.
     sql += (
-        " ORDER BY COALESCE(l.qualified, 0) DESC,"
-        " (l.lead_type = 'NO_SITE') DESC,"
+        " ORDER BY day DESC,"
+        " COALESCE(l.qualified, 0) DESC,"
+        " COALESCE(l.lead_score, -1) DESC,"
         " (a.score IS NULL), a.score DESC, l.id LIMIT ?"
     )
     params.append(limit)
@@ -182,7 +257,33 @@ def leads_payload(status: str | None, limit: int) -> list[dict]:
         rows = _rows(conn, sql, tuple(params))
     for row in rows:
         row["domain"] = domain_of(row.get("website"))
+        row["gaps"] = gap_labels(row.get("gaps_json"))
     return rows
+
+
+def groups_payload(
+    status: str | None = None, category: str | None = None, since: str | None = None
+) -> dict:
+    """Per-day and per-category summaries, plus the values to filter by."""
+    cfg = _cfg()
+    where: list[str] = []
+    params: list[Any] = []
+    if status and status != "ALL":
+        where.append("l.status = ?")
+        params.append(status)
+    if category and category != "ALL":
+        where.append(f"{db.CATEGORY_SQL} = ?")
+        params.append(category)
+    if since:
+        where.append(f"{db.LOCAL_DAY_SQL} >= ?")
+        params.append(since)
+    with db.session(cfg.db_path) as conn:
+        return {
+            "by_day": [dict(r) for r in db.leads_by_day(conn, 90, where, params)],
+            "by_category": [dict(r) for r in db.leads_by_category(conn, 90, where, params)],
+            "days": db.distinct_days(conn),
+            "categories": db.distinct_categories(conn),
+        }
 
 
 def lead_detail(lead_id: int) -> dict | None:
@@ -194,9 +295,18 @@ def lead_detail(lead_id: int) -> dict | None:
         audit_row = db.get_audit(conn, lead_id)
         contacts = _rows(conn, "SELECT kind, value FROM contacts WHERE lead_id=?", (lead_id,))
         messages = _rows(conn, "SELECT * FROM messages WHERE lead_id=?", (lead_id,))
+        stage_row = db.get_pipeline(conn, lead_id)
+        timeline = db.lead_timeline(conn, lead_id)
     detail = dict(lead)
+    detail["timeline"] = timeline
+    detail["found_day"] = db.local_day(lead["created_at"])
     detail["audit"] = dict(audit_row) if audit_row else None
     detail["issues"] = describe_issues(audit_row["issues_json"]) if audit_row else []
+    # Commercial gaps stay a separate list from technical issues all the way
+    # to the screen, because they are a different kind of claim.
+    detail["gaps"] = describe_gaps(audit_row["gaps_json"]) if audit_row else []
+    detail["verdict"] = qualify.explain(lead["score_json"])
+    detail["pipeline"] = dict(stage_row) if stage_row else None
     detail["contacts"] = contacts
     detail["messages"] = messages
     return detail
@@ -218,6 +328,20 @@ def messages_payload(channel: str | None, status: str | None) -> list[dict]:
     sql += " ORDER BY m.id LIMIT 300"
     with db.session(cfg.db_path) as conn:
         return _rows(conn, sql, tuple(params))
+
+
+def pipeline_payload(stage: str | None, limit: int) -> dict:
+    cfg = _cfg()
+    with db.session(cfg.db_path) as conn:
+        money = db.revenue(conn)
+        rows = db.pipeline_rows(conn, stage, limit)
+    return {
+        "revenue": money,
+        "stages": list(db.ALL_STAGES),
+        "labels": STAGE_LABEL,
+        "currency": cfg.get("pipeline.currency") or money.get("currency") or "",
+        "deals": [dict(r) for r in rows],
+    }
 
 
 def save_message(message_id: int, subject: str | None, body: str) -> bool:
@@ -348,10 +472,22 @@ class Handler(BaseHTTPRequestHandler):
             self._json(JOB.snapshot())
         elif path == "/api/leads":
             limit = min(max(_as_int(one("limit", "300"), "limit"), 1), 2000)
-            self._json(leads_payload(one("status", "ALL"), limit))
+            self._json(leads_payload(
+                one("status", "ALL"), limit,
+                category=one("category", "ALL"),
+                day=one("day", "ALL"),
+                since=one("since") or None,
+            ))
+        elif path == "/api/groups":
+            self._json(groups_payload(
+                one("status", "ALL"), one("category", "ALL"), one("since") or None
+            ))
         elif path.startswith("/api/lead/"):
             detail = lead_detail(_as_int(path.rsplit("/", 1)[-1], "lead id"))
             self._json(detail or {"error": "not found"}, 200 if detail else 404)
+        elif path == "/api/pipeline":
+            limit = min(max(_as_int(one("limit", "300"), "limit"), 1), 2000)
+            self._json(pipeline_payload(one("stage", "ALL"), limit))
         elif path == "/api/messages":
             self._json(messages_payload(one("channel", "ALL"), one("status", "ALL")))
         elif path == "/api/queue":
@@ -422,6 +558,37 @@ class Handler(BaseHTTPRequestHandler):
                 with db.session(cfg.db_path) as conn:
                     db.suppress(conn, value, kind, body.get("reason") or "via web UI")
                 self._json({"suppressed": value, "kind": kind})
+
+            elif path == "/api/stage":
+                cfg = _cfg()
+                stage = (body.get("stage") or "").upper()
+                if stage not in db.ALL_STAGES:
+                    raise _BadRequest(f"stage must be one of {', '.join(db.ALL_STAGES)}")
+                ids = _int_list(body.get("ids"), "ids")
+                amount = body.get("amount")
+                if amount in ("", None):
+                    amount = None
+                else:
+                    try:
+                        amount = float(amount)
+                    except (TypeError, ValueError):
+                        raise _BadRequest("amount must be a number") from None
+                updated = 0
+                with db.session(cfg.db_path) as conn:
+                    for lead_id in ids:
+                        if not db.get_lead(conn, lead_id):
+                            continue
+                        db.set_stage(
+                            conn, lead_id, stage,
+                            amount=amount,
+                            note=body.get("note") or None,
+                            reason=body.get("reason") or None,
+                            currency=body.get("currency")
+                            or str(cfg.get("pipeline.currency", "") or "")
+                            or None,
+                        )
+                        updated += 1
+                self._json({"updated": updated, "unknown": len(ids) - updated})
 
             elif path == "/api/message":
                 message_id = _as_int(body.get("id"), "id")

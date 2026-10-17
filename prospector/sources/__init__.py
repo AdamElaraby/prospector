@@ -26,6 +26,9 @@ def get_source(cfg: Config, override: str | None = None):
     'auto' prefers the structured API, then the maintained Go scraper if its
     binary is built, and falls back to the built-in Playwright scraper, which
     always works but is the most brittle of the three.
+
+    Apify is never chosen by 'auto'. Every Apify run bills the user's account,
+    so it has to be asked for by name.
     """
     choice = (override or cfg.get("search.source", "auto")).lower()
 
@@ -36,6 +39,20 @@ def get_source(cfg: Config, override: str | None = None):
         from .places_api import PlacesAPISource
 
         return PlacesAPISource()
+
+    if choice == "apify":
+        from .apify import ApifySource
+
+        return ApifySource(
+            actor_id=cfg.get("search.apify.actor_id") or None,
+            input_template=cfg.get("search.apify.input") or {},
+            query_field=str(cfg.get("search.apify.query_field", "searchStringsArray")),
+            max_field=str(cfg.get("search.apify.max_field", "maxCrawledPlacesPerSearch")),
+            timeout_seconds=int(cfg.get("search.apify.timeout_seconds", 900)),
+            poll_seconds=int(cfg.get("search.apify.poll_seconds", 5)),
+            memory_mbytes=cfg.get("search.apify.memory_mbytes") or None,
+            dataset_id=cfg.get("search.apify.dataset_id") or None,
+        )
 
     if choice in ("gosom", "gms", "google-maps-scraper"):
         from .gosom_scraper import GosomSource
@@ -55,7 +72,7 @@ def get_source(cfg: Config, override: str | None = None):
         return MapsScraperSource()
 
     raise ValueError(
-        f"Unknown source '{choice}'. Use places_api, gosom, scraper, or auto."
+        f"Unknown source '{choice}'. Use places_api, apify, gosom, scraper, or auto."
     )
 
 

@@ -1,10 +1,14 @@
 """Website audit: decide whether a business's site is bad enough to pitch.
 
-Two jobs:
+Three jobs:
   1. Score the site so `draft` has a concrete, true thing to point at.
      "Your site isn't secure and doesn't work on phones" beats "I noticed your
      online presence could be improved."
-  2. Harvest a contact email, since Google never provides one.
+  2. Record what the site cannot DO for a customer — booking, quotes, service
+     information, a way to make contact. That is opportunity.py's job, kept in
+     its own module because a missing booking button is not a defect and must
+     never be pitched as one.
+  3. Harvest a contact email, since Google never provides one.
 
 Everything here is read-only HTTP plus one headless page render. Nothing is
 submitted, nothing is logged in to.
@@ -22,6 +26,8 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
+
+from . import opportunity
 
 # Points per problem. A site needs `qualify.bad_site_threshold` total to count
 # as a lead. Weights are tuned so any single severe defect (dead site, no
@@ -41,7 +47,6 @@ ISSUE_WEIGHTS: dict[str, int] = {
     "legacy_layout": 3,
     "slow": 2,
     "stale_copyright": 2,
-    "no_contact_info": 2,
     "thin_content": 2,
     "parked_or_placeholder": 4,
     "no_title": 1,
@@ -62,6 +67,8 @@ ISSUE_TEXT: dict[str, str] = {
     "slow": "the homepage takes over 4 seconds to load",
     "legacy_layout": "the page is built on table/frameset layout from a much older era of the web",
     "stale_copyright": "the footer copyright is years out of date",
+    # No longer emitted: "no way to contact them" is a commercial gap, scored
+    # in opportunity.py. Kept so audits recorded before that split still read.
     "no_contact_info": "there is no clickable phone number or email on the homepage",
     "thin_content": "the homepage is nearly empty",
     "parked_or_placeholder": "the domain shows a parking or 'coming soon' placeholder instead of a real site",
@@ -187,8 +194,13 @@ class Auditor:
             "score": 0,
             "headline_issue": None,
             "emails": [],
+            # Unknown until a page is parsed; a site we never saw gets no
+            # commercial findings invented for it.
+            **opportunity.unknown(),
         }
         if not website:
+            # No site at all is not "unknown" — it is every capability missing.
+            result.update(opportunity.no_website())
             return result
 
         url = _normalize_url(website)
@@ -261,11 +273,6 @@ class Auditor:
             if year < self.stale_before:
                 issues.append("stale_copyright")
 
-        has_tel = bool(soup.select_one('a[href^="tel:"]'))
-        has_mail = bool(soup.select_one('a[href^="mailto:"]'))
-        if not has_tel and not has_mail:
-            issues.append("no_contact_info")
-
         # Mobile render check. Only worth it if the site is actually up.
         if self.use_playwright and response.status_code < 400:
             mobile = self._mobile_check(str(response.url))
@@ -275,6 +282,8 @@ class Auditor:
                     issues.append("mobile_overflow")
         elif "not_mobile_friendly" in issues:
             result["mobile_friendly"] = 0
+
+        result.update(opportunity.analyse(soup, html, str(response.url)))
 
         result["emails"] = self._harvest_emails(soup, html, str(response.url))
 

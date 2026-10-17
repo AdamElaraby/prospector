@@ -33,7 +33,13 @@ def _writable_config() -> Path:
 ENV_PATH = ROOT / ".env"
 ENV_EXAMPLE = ROOT / ".env.example"
 
-KNOWN_KEYS = ("GOOGLE_PLACES_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "RESEND_API_KEY")
+KNOWN_KEYS = (
+    "GOOGLE_PLACES_API_KEY",
+    "APIFY_API_TOKEN",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "RESEND_API_KEY",
+)
 
 _yaml = YAML()
 _yaml.preserve_quotes = True
@@ -60,32 +66,80 @@ def save_doc(doc, path: Path | None = None) -> None:
 def update_config(updates: dict[str, Any], path: Path | None = None) -> list[str]:
     """Apply {"sender.name": "...", "search.niches": [...]} to config.local.yaml.
 
-    Returns the dotted keys actually changed. Unknown paths are ignored rather
-    than silently creating new branches the rest of the code never reads.
+    Returns the dotted keys actually changed. A path the template knows about
+    but the local file predates is created on the way; anything the template
+    does not define either is ignored, rather than silently creating a branch
+    the rest of the code never reads.
     """
     path = path or _writable_config()
     doc = load_doc(path)
     changed: list[str] = []
 
     for dotted, value in updates.items():
-        parts = dotted.split(".")
-        node = doc
-        ok = True
-        for part in parts[:-1]:
-            if not isinstance(node, dict) or part not in node:
-                ok = False
-                break
-            node = node[part]
-        leaf = parts[-1]
-        if not ok or not isinstance(node, dict) or leaf not in node:
+        node = _resolve(doc, dotted)
+        if node is None:
             continue
-        if node[leaf] != value:
-            node[leaf] = value
+        parent, leaf = node
+        if parent.get(leaf) != value:
+            parent[leaf] = value
             changed.append(dotted)
 
     if changed:
         save_doc(doc, path)
     return changed
+
+
+def _resolve(doc, dotted: str):
+    """Find (parent_mapping, leaf_key) for a dotted path, creating it if the
+    committed template defines it and this config file is simply older.
+
+    Without this, a setting added to config.yaml after someone made their
+    config.local.yaml could never be saved from the UI: the save would appear
+    to work and change nothing.
+    """
+    from .config import TEMPLATE_CONFIG
+
+    parts = dotted.split(".")
+    node = doc
+    template = None
+    for part in parts[:-1]:
+        if not isinstance(node, dict):
+            return None
+        if part not in node:
+            template = template if template is not None else _template_doc(TEMPLATE_CONFIG)
+            if not _in_template(template, dotted):
+                return None
+            node[part] = {}
+        node = node[part]
+    leaf = parts[-1]
+    if not isinstance(node, dict):
+        return None
+    if leaf not in node:
+        template = template if template is not None else _template_doc(TEMPLATE_CONFIG)
+        if not _in_template(template, dotted):
+            return None
+        node[leaf] = None
+    return node, leaf
+
+
+_template_cache: dict[str, Any] = {}
+
+
+def _template_doc(path: Path):
+    key = str(path)
+    if key not in _template_cache:
+        with path.open() as fh:
+            _template_cache[key] = _yaml.load(fh)
+    return _template_cache[key]
+
+
+def _in_template(template, dotted: str) -> bool:
+    node = template
+    for part in dotted.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return False
+        node = node[part]
+    return True
 
 
 # --------------------------------------------------------------------------- env

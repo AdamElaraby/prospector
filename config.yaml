@@ -43,13 +43,39 @@ search:
   locations:
     - Austin, TX
   max_results_per_query: 25
-  # auto | places_api | gosom | scraper
-  #   places_api  Google Places API. Structured and stable. Needs a key.
+  # auto | places_api | apify | gosom | scraper
+  #   places_api  Google Places API. The supported default: structured, stable,
+  #               and it returns websiteUri, which is the field this whole
+  #               campaign turns on. Needs a key.
+  #   apify       Run an Apify Actor and read its dataset. Reaches things the
+  #               Places API does not, and lets an Actor you already pay for
+  #               feed this pipeline. Billed by Apify, so never picked by auto.
   #   gosom       gosom/google-maps-scraper (MIT, Go). Maintained, so it survives
   #               Google's markup changes better than ours. Needs `make install-gosom`.
   #   scraper     Built-in Playwright scraper. No extra tooling, most brittle.
   #   auto        places_api if a key is set, else gosom if built, else scraper.
   source: "auto"
+
+  # Only read when source is "apify". Needs APIFY_API_TOKEN in .env.
+  apify:
+    # username~actor-name, as the Apify API spells it. The default is the
+    # widely used Google Maps Actor.
+    actor_id: "compass~crawler-google-places"
+    # Which input field carries the search text, and which caps the results.
+    # Different Actors name these differently; these two are correct for the
+    # default Actor. Set max_field to "" for an Actor that has no such cap.
+    query_field: "searchStringsArray"
+    max_field: "maxCrawledPlacesPerSearch"
+    # Anything else the Actor takes. The search query is always written over
+    # the top of this, so a query left in here cannot silently hijack a run.
+    input: {}
+    # Give up waiting after this long. The run itself keeps going on Apify.
+    timeout_seconds: 900
+    poll_seconds: 5
+    memory_mbytes: null
+    # Set to re-import a run you already paid for, instead of starting a new
+    # one. Find it in the Apify console under the run's Dataset tab.
+    dataset_id: ""
 
   gosom:
     # Leave blank to look in ./bin/, then $GOSOM_BINARY, then $PATH.
@@ -66,15 +92,25 @@ search:
     timeout_seconds: 900
 
 # --- What counts as a lead ---
+# Having no website is not a qualification. A closed shop with two reviews also
+# has no website. Every lead is scored out of 100 across four dimensions and
+# has to clear three bars, so the ones that survive are businesses that are
+# trading, have a demonstrable problem, can plausibly pay, and need something
+# one person can actually build. See prospector/qualify.py.
 qualify:
-  # Businesses with no website at all. Highest intent.
+  # Which kinds of lead to consider at all.
   include_no_site: true
-  # Businesses whose site fails the audit badly enough.
   include_bad_site: true
-  # A site needs at least this many audit points to count as "bad".
-  # See prospector/audit.py ISSUE_WEIGHTS for what scores what.
-  bad_site_threshold: 4
-  # Skip businesses under this review count (usually closed / not serious).
+
+  # The bars. Raise min_lead_score to get fewer, better leads.
+  #   total     out of 100
+  #   activity  out of 30 — reviews, rating, a working phone
+  #   problem   out of 30 — technical defects plus missing commercial capability
+  min_lead_score: 55
+  min_activity_score: 12
+  min_problem_score: 10
+
+  # Skip businesses under this review count before a single request is spent.
   min_review_count: 3
   # Skip chains and franchises by name match.
   exclude_name_patterns:
@@ -82,6 +118,27 @@ qualify:
     - "Starbucks"
     - "Subway"
     - "Walmart"
+
+  # Ability to pay, by trade. Matched as substrings against the category, the
+  # niche you searched for, and the business name. Leave a list out entirely to
+  # use the built-in defaults in prospector/qualify.py.
+  # high_value_categories: ["plumb", "roof", "dentist"]
+  # low_value_categories: ["laundromat", "vending"]
+  # Businesses one person cannot realistically deliver for. Scored to zero on
+  # the deliverable dimension, which disqualifies them outright.
+  # undeliverable_patterns: ["hospital", "university", "government"]
+
+  # Legacy. The audit score still feeds the problem dimension above; this
+  # standalone threshold no longer decides anything on its own.
+  bad_site_threshold: 4
+
+# --- Sales pipeline ---
+# Leads collected is a vanity number. What matters is how many conversations
+# turned into quotes and how many quotes turned into money, which is what
+# `pipeline` and `funnel` record. Nothing here is inferred — you type it.
+pipeline:
+  # Shown next to every amount. A symbol ($, £, €) or a code (USD, AED).
+  currency: "$"
 
 # --- Message drafting ---
 llm:
