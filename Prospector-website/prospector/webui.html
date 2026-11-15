@@ -1,0 +1,979 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prospector</title>
+<style>
+  :root {
+    --bg:#f5f6f8; --panel:#fff; --ink:#15171c; --muted:#6b7280; --line:#e2e5ea;
+    --accent:#1f6feb; --accent-ink:#fff; --good:#1a7f45; --warn:#a15c00; --bad:#b42318;
+    --code:#f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#111318; --panel:#191c22; --ink:#e8eaed; --muted:#98a0ad; --line:#2a2f38;
+      --accent:#4a8bf5; --accent-ink:#fff; --good:#39b46a; --warn:#d99400;
+      --bad:#f0645a; --code:#12141a;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14.5px/1.55 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+  header{position:sticky;top:0;z-index:10;background:var(--panel);
+    border-bottom:1px solid var(--line);padding:10px 20px;
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;letter-spacing:-.01em}
+  nav{display:flex;gap:4px}
+  nav button{background:none;border:0;padding:7px 13px;border-radius:7px;color:var(--muted);
+    font:inherit;font-weight:550;cursor:pointer}
+  nav button.on{background:var(--bg);color:var(--ink)}
+  .pills{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .pill{font-size:11.5px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);
+    color:var(--muted);white-space:nowrap}
+  .pill b{color:var(--ink);font-weight:650}
+  main{max-width:1080px;margin:0 auto;padding:22px 20px 80px}
+  section{display:none} section.on{display:block}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:18px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 3px}
+  .card .sub{color:var(--muted);font-size:13px;margin:0 0 15px}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:0 0 4px;font-weight:550}
+  input,textarea,select{width:100%;background:var(--bg);color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+  textarea{resize:vertical;min-height:70px}
+  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .field{margin-bottom:12px}
+  button.act{background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;
+    padding:9px 16px;font:inherit;font-weight:600;cursor:pointer}
+  button.act:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost,a.ghost{background:none;border:1px solid var(--line);color:var(--ink);
+    border-radius:8px;padding:8px 13px;font:inherit;cursor:pointer}
+  a.ghost{display:inline-flex;align-items:center}
+  button.danger{border-color:var(--bad);color:var(--bad)}
+  .step{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-top:1px solid var(--line)}
+  .step:first-of-type{border-top:0}
+  .step .n{width:24px;height:24px;border-radius:50%;background:var(--bg);color:var(--muted);
+    display:grid;place-items:center;font-size:12px;font-weight:700;flex:none;margin-top:2px}
+  .step .body{flex:1;min-width:0}
+  .step h3{margin:0 0 2px;font-size:14px}
+  .step p{margin:0 0 9px;color:var(--muted);font-size:13px}
+  pre.log{background:var(--code);border:1px solid var(--line);border-radius:8px;
+    padding:12px;font-size:12.5px;line-height:1.5;max-height:340px;overflow:auto;
+    white-space:pre-wrap;word-break:break-word;margin:0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;
+    padding:7px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+  td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr.clickable:hover{background:var(--bg);cursor:pointer}
+  .tag{font-size:11px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);
+    color:var(--muted);white-space:nowrap}
+  .tag.NO_SITE{border-color:var(--good);color:var(--good)}
+  .tag.SENT{border-color:var(--accent);color:var(--accent)}
+  .tag.REPLIED{border-color:var(--good);color:var(--good)}
+  .tag.SKIPPED{opacity:.65}
+  .msg{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:10px;
+    white-space:pre-wrap;font:inherit;width:100%;min-height:130px}
+  a{color:var(--accent)}
+  .muted{color:var(--muted)}
+  .warn{color:var(--warn)} .bad{color:var(--bad)} .good{color:var(--good)}
+  .banner{border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 8%,transparent);
+    border-radius:9px;padding:11px 13px;font-size:13px;margin-bottom:14px}
+  dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);
+    max-width:640px;width:92vw;padding:20px}
+  dialog::backdrop{background:rgba(0,0,0,.5)}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:4px 12px;font-size:13px;margin-bottom:14px}
+  .kv div:nth-child(odd){color:var(--muted)}
+  ul.issues{margin:0 0 14px;padding-left:18px;font-size:13px}
+  /* Progress bar. Driven by the stage's own reported position, so the width
+     means something; an unknown total falls back to the sliding stripe. */
+  .bar{height:8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);
+    overflow:hidden;margin:2px 0 8px}
+  .bar > i{display:block;height:100%;background:var(--accent);border-radius:999px;
+    transition:width .35s ease;width:0}
+  .bar.unknown > i{width:35%;animation:slide 1.3s ease-in-out infinite}
+  @keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
+  .bar-row{display:flex;gap:10px;align-items:baseline;font-size:12.5px;color:var(--muted)}
+  .bar-row b{color:var(--ink);font-weight:600}
+  .grade{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;
+    font-size:12px;font-weight:700;border:1px solid var(--line);color:var(--muted)}
+  .grade.A{background:var(--good);border-color:var(--good);color:#fff}
+  .grade.B{border-color:var(--good);color:var(--good)}
+  .grade.C{border-color:var(--warn);color:var(--warn)}
+  .grade.D{opacity:.6}
+  .gap{font-size:11px;padding:1px 6px;border-radius:999px;border:1px dashed var(--warn);
+    color:var(--warn);white-space:nowrap;margin-right:4px;display:inline-block}
+  .funnel{display:grid;gap:6px;margin:4px 0 14px}
+  .funnel .f{display:grid;grid-template-columns:150px 1fr 90px;gap:10px;align-items:center;
+    font-size:13px}
+  .funnel .track{height:20px;background:var(--bg);border:1px solid var(--line);
+    border-radius:6px;overflow:hidden}
+  .funnel .track > i{display:block;height:100%;background:var(--accent);opacity:.75}
+  .money{display:flex;gap:22px;flex-wrap:wrap;margin-top:6px}
+  .money div{font-size:13px;color:var(--muted)}
+  .money b{display:block;font-size:20px;color:var(--ink);font-weight:650;letter-spacing:-.01em}
+  /* Date heading inside the leads table. A sticky row rather than separate
+     tables, so one scroll and one set of columns covers every batch. */
+  tr.dayhead td{background:var(--bg);font-weight:650;font-size:12.5px;
+    padding:9px 8px;border-bottom:1px solid var(--line);letter-spacing:-.01em}
+  tr.dayhead span.muted{font-weight:400;margin-left:8px}
+  .when{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  ol.timeline{list-style:none;margin:6px 0 14px;padding:0;font-size:13px}
+  ol.timeline li{display:grid;grid-template-columns:118px 1fr;gap:10px;
+    padding:3px 0;border-left:2px solid var(--line);padding-left:12px}
+  ol.timeline li span{color:var(--muted);font-variant-numeric:tabular-nums}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);
+    color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;
+    transition:opacity .2s;pointer-events:none;z-index:50}
+  .toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <h1>Prospector</h1>
+  <nav>
+    <button data-tab="run" class="on">Run</button>
+    <button data-tab="leads">Leads</button>
+    <button data-tab="messages">Messages</button>
+    <button data-tab="pipeline">Pipeline</button>
+    <button data-tab="setup">Setup</button>
+  </nav>
+  <div class="pills" id="pills"></div>
+</header>
+
+<main>
+  <!-- ---------------------------------------------------------------- RUN -->
+  <section id="tab-run" class="on">
+    <div id="blockers"></div>
+    <div class="card">
+      <h2>The pipeline</h2>
+      <p class="sub">Each step feeds the next. Everything is safe to re-run — nobody gets found, drafted, or messaged twice.</p>
+
+      <div class="step">
+        <div class="n">1</div>
+        <div class="body">
+          <h3>Find businesses</h3>
+          <p>Pulls from Google via whichever source you picked in Setup. Leave the boxes empty to use every niche and city in Setup.</p>
+          <div class="grid" style="margin-bottom:10px">
+            <div><label>Niche (optional)</label><input id="find-niche" placeholder="laundromat"></div>
+            <div><label>Location (optional)</label><input id="find-location" placeholder="Round Rock, TX"></div>
+            <div><label>Max results</label><input id="find-max" type="number" min="1" placeholder="from Setup"></div>
+          </div>
+          <button class="act" data-run="find">Find</button>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="n">2</div>
+        <div class="body">
+          <h3>Audit and qualify</h3>
+          <p>Checks what is technically broken, and separately what the site cannot <em>do</em> for a customer — booking, quotes, service information, a way to make contact. Then scores each business out of 100 and keeps the ones worth your time. No website on its own is not enough.</p>
+          <button class="act" data-run="audit">Audit</button>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="n">3</div>
+        <div class="body">
+          <h3>Write the messages</h3>
+          <p>One message per lead, built from what the audit actually found. Costs a fraction of a cent each.</p>
+          <button class="act" data-run="draft">Draft</button>
+          <button class="ghost" onclick="show('messages')">Read the drafts</button>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="n">4</div>
+        <div class="body">
+          <h3>Send</h3>
+          <p><strong>Use WhatsApp.</strong> It opens each chat with the message already typed, needs no domain, no address and no account, and it is the only way to reach the businesses that have no website — your best leads. Email is optional and set up separately.</p>
+          <div class="row" style="margin-bottom:10px">
+            <button class="act" data-run="wa">Build WhatsApp queue</button>
+            <button class="ghost" id="open-queue">Open queue page</button>
+          </div>
+          <div class="row">
+            <button class="ghost" data-run="send">Preview emails (sends nothing)</button>
+            <label class="row" style="margin:0;gap:6px;color:var(--ink)">
+              <input type="checkbox" id="send-confirm" style="width:auto">
+              I read the drafts — really send
+            </label>
+            <input id="send-limit" type="number" min="1" placeholder="how many" style="width:120px">
+            <button class="act" id="send-real" disabled>Send for real</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <h2 style="margin:0">Output</h2>
+        <span id="job-status" class="muted" style="font-size:13px"></span>
+        <button class="ghost" id="stop" style="margin-left:auto" disabled>Stop</button>
+      </div>
+      <div id="progress" hidden>
+        <div class="bar" id="bar"><i id="bar-fill"></i></div>
+        <div class="bar-row">
+          <b id="bar-label"></b>
+          <span id="bar-count"></span>
+          <span id="bar-note" style="margin-left:auto;text-align:right;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%"></span>
+        </div>
+      </div>
+      <pre class="log" id="log">Nothing has run yet.</pre>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- LEADS -->
+  <section id="tab-leads">
+    <div class="card">
+      <div class="row" style="margin-bottom:12px">
+        <h2 style="margin:0">Leads</h2>
+        <select id="lead-group" style="width:auto;margin-left:auto">
+          <option value="lead">Every lead, newest batch first</option>
+          <option value="date">Summary by day</option>
+          <option value="category">Summary by category</option>
+        </select>
+        <button class="ghost" id="refresh-leads">Refresh</button>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <select id="lead-filter" style="width:auto">
+          <option value="ALL">Any status</option>
+          <option value="AUDITED">Qualified, not drafted</option>
+          <option value="DRAFTED">Drafted</option>
+          <option value="SENT">Sent</option>
+          <option value="REPLIED">Replied</option>
+          <option value="NEW">Not audited yet</option>
+          <option value="SKIPPED">Skipped</option>
+        </select>
+        <select id="lead-day" style="width:auto"><option value="ALL">Any day</option></select>
+        <select id="lead-category" style="width:auto"><option value="ALL">Any category</option></select>
+        <span id="lead-count" class="muted" style="font-size:12.5px;margin-left:auto"></span>
+      </div>
+      <div style="overflow-x:auto"><table id="leads-table"></table></div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- MESSAGES -->
+  <section id="tab-messages">
+    <div class="card">
+      <div class="row" style="margin-bottom:6px">
+        <h2 style="margin:0">Drafts</h2>
+        <select id="msg-channel" style="width:auto;margin-left:auto">
+          <option value="ALL">Both channels</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="email">Email</option>
+        </select>
+        <select id="msg-status" style="width:auto">
+          <option value="DRAFT">Not sent</option>
+          <option value="SENT">Sent</option>
+          <option value="ALL">All</option>
+        </select>
+        <button class="ghost" id="refresh-msgs">Refresh</button>
+      </div>
+      <p class="sub">Edit anything that reads wrong before it goes out. Changes save to the draft.</p>
+    </div>
+    <div id="msg-list"></div>
+  </section>
+
+  <!-- ----------------------------------------------------------- PIPELINE -->
+  <section id="tab-pipeline">
+    <div class="card">
+      <h2>Revenue</h2>
+      <p class="sub">Leads found is a number that only ever goes up. These are the numbers that decide whether any of this was worth doing. Nothing here is guessed — you record each step as it actually happens.</p>
+      <div class="money" id="money"></div>
+    </div>
+
+    <div class="card">
+      <h2>Funnel</h2>
+      <p class="sub">How many leads ever reached each stage, and what share of the previous stage that is. The stage where the bar collapses is the thing to fix.</p>
+      <div class="funnel" id="funnel"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom:12px">
+        <h2 style="margin:0">Deals</h2>
+        <select id="deal-filter" style="width:auto;margin-left:auto">
+          <option value="ALL">All stages</option>
+        </select>
+        <button class="ghost" id="refresh-pipeline">Refresh</button>
+      </div>
+      <div style="overflow-x:auto"><table id="deals-table"></table></div>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- SETUP -->
+  <section id="tab-setup">
+    <div class="card">
+      <h2>You</h2>
+      <p class="sub">Your first name is the only thing messages need. You don't need a company, a domain, or an address to offer someone a website — leave the rest blank and the messages read as one person, which is the honest version and the one that gets replies.</p>
+      <div class="grid">
+        <div><label>Your name</label><input id="s-name" placeholder="Sam"></div>
+        <div><label>Price to mention (optional)</label><input id="s-price" placeholder="$300 — or leave blank"></div>
+        <div><label>Link to your work (optional)</label><input id="s-portfolio" placeholder="only if you have one"></div>
+        <div><label>Your phone (optional)</label><input id="s-phone"></div>
+        <div style="grid-column:1/-1"><label>Trading name (optional — skip this if it's just you)</label><input id="s-business" placeholder="leave blank"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="act" id="save-sender">Save</button>
+        <button class="ghost" id="reload-setup">Reload from file</button>
+        <span id="setup-dirty" class="warn" style="font-size:12.5px" hidden>unsaved changes</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Email <span class="tag" id="email-state"></span></h2>
+      <p class="sub">Optional, and off by default. Email needs a domain you own, and US law (CAN-SPAM) requires a real postal address in commercial email — that applies to individuals too, not just companies. A home address or a cheap PO box both count. <strong>WhatsApp needs none of this</strong>, so you can leave this whole section alone.</p>
+      <label class="row" style="margin:0 0 12px;gap:7px;color:var(--ink)">
+        <input type="checkbox" id="e-enabled" style="width:auto"> Turn email on
+      </label>
+      <div class="grid">
+        <div><label>From address (on a domain you own)</label><input id="e-from" placeholder="you@yourdomain.com"></div>
+        <div><label>Reply-to</label><input id="e-reply"></div>
+        <div style="grid-column:1/-1"><label>Postal address — legally required for email</label><input id="e-postal"></div>
+      </div>
+      <button class="act" id="save-email" style="margin-top:12px">Save email settings</button>
+    </div>
+
+    <div class="card">
+      <h2>API keys</h2>
+      <p class="sub">Stored in <code>.env</code>, readable only by you, never sent anywhere but the service they belong to. Leave a box blank to keep the existing key.</p>
+      <div class="grid">
+        <div><label>OpenAI <span id="k-openai" class="tag"></span></label>
+          <input id="key-openai" type="password" placeholder="needed to write messages"></div>
+        <div><label>Resend <span id="k-resend" class="tag"></span></label>
+          <input id="key-resend" type="password" placeholder="only if you turn email on"></div>
+        <div><label>Google Places <span id="k-places" class="tag"></span></label>
+          <input id="key-places" type="password" placeholder="the supported default"></div>
+        <div><label>Apify <span id="k-apify" class="tag"></span></label>
+          <input id="key-apify" type="password" placeholder="only if you pick the Apify source"></div>
+      </div>
+      <button class="act" id="save-keys" style="margin-top:12px">Save keys</button>
+    </div>
+
+    <div class="card">
+      <h2>What to look for</h2>
+      <p class="sub">This matters more than any other setting. Trades where a website isn't assumed convert; dentists and law firms don't.</p>
+      <div class="grid">
+        <div><label>Niches (one per line)</label><textarea id="s-niches"></textarea></div>
+        <div><label>Cities (one per line)</label><textarea id="s-locations"></textarea></div>
+      </div>
+      <div class="grid" style="margin-top:12px">
+        <div><label>Max results per search</label><input id="s-max" type="number" min="1"></div>
+        <div><label>Lead source</label>
+          <select id="s-source">
+            <option value="auto">Auto</option>
+            <option value="places_api">Google Places API (default)</option>
+            <option value="apify">Apify Actor (billed by Apify)</option>
+            <option value="gosom">gosom scraper (free)</option>
+            <option value="scraper">Built-in scraper</option>
+          </select></div>
+        <div><label>Skip businesses under N reviews</label><input id="s-minrev" type="number" min="0"></div>
+        <div><label>Apify Actor (username~actor-name)</label><input id="s-apify-actor" placeholder="compass~crawler-google-places"></div>
+      </div>
+      <button class="act" id="save-search" style="margin-top:12px">Save</button>
+    </div>
+
+    <div class="card">
+      <h2>How picky to be</h2>
+      <p class="sub">Every business is scored out of 100: is it trading, is there a real problem, can it plausibly pay, and could you actually build what it needs. Having no website is <em>not</em> a qualification on its own — a closed shop has no website either. Raise the bar to get fewer, better leads.</p>
+      <div class="grid">
+        <div><label>Minimum overall score (0–100)</label><input id="s-minscore" type="number" min="0" max="100"></div>
+        <div><label>Minimum sign of an active business (0–30)</label><input id="s-minact" type="number" min="0" max="30"></div>
+        <div><label>Minimum demonstrated problem (0–30)</label><input id="s-minprob" type="number" min="0" max="30"></div>
+        <div><label>Currency for quotes and deals</label><input id="s-currency" placeholder="$"></div>
+      </div>
+      <button class="act" id="save-qualify" style="margin-top:12px">Save</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="lead-modal"><div id="lead-modal-body"></div>
+  <div class="row" style="margin-top:16px">
+    <button class="ghost" onclick="document.getElementById('lead-modal').close()">Close</button>
+  </div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+let STATE = null, pollTimer = null;
+
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  setTimeout(() => t.classList.remove('on'), 2200);
+}
+async function api(path, opts) {
+  const r = await fetch(path, {headers: {'Content-Type': 'application/json'}, ...opts});
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.statusText); }
+  return r.json();
+}
+const post = (path, body) => api(path, {method: 'POST', body: JSON.stringify(body)});
+const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function show(tab) {
+  $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  $$('section').forEach(s => s.classList.toggle('on', s.id === 'tab-' + tab));
+  if (tab === 'leads') loadLeads();
+  if (tab === 'messages') loadMessages();
+  if (tab === 'pipeline') loadPipeline();
+}
+$$('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
+
+// ---------------------------------------------------------------- state
+
+// The Setup form is filled once, then left alone. Repainting it from the
+// background poll would wipe out whatever you are in the middle of typing.
+let setupFilled = false;
+
+function renderState(s) {
+  STATE = s;
+  const c = s.counts || {};
+  const order = ['NEW','AUDITED','DRAFTED','SENT','REPLIED','SKIPPED'];
+  const label = {NEW:'found',AUDITED:'qualified',DRAFTED:'drafted',SENT:'sent',REPLIED:'replied',SKIPPED:'skipped'};
+  const pills = order.filter(k => c[k]).map(k =>
+    `<span class="pill">${label[k]} <b>${c[k]}</b></span>`);
+  const rev = s.revenue || {};
+  if (rev.won_count) pills.push(
+    `<span class="pill">won <b>${money(rev.won_total, s.pipeline_currency)}</b></span>`);
+  $('#pills').innerHTML = pills.join('') || '<span class="pill muted">no leads yet</span>';
+
+  const problems = [];
+  if (s.sender_missing?.length) problems.push('Put your name in <b>Setup → You</b>. It is the only thing drafting needs.');
+  if (!s.keys?.OPENAI_API_KEY) problems.push('Add your <b>OpenAI key</b> in Setup to write messages.');
+  if (s.email_enabled && s.email_missing?.length) problems.push('Email is on but incomplete — it still needs a from address and a postal address.');
+  if (s.email_enabled && !s.keys?.RESEND_API_KEY) problems.push('Email is on but there is no <b>Resend key</b>.');
+  $('#blockers').innerHTML = problems.length
+    ? `<div class="banner">${problems.map(p => '• ' + p).join('<br>')}</div>` : '';
+
+  const key = (id, on) => { const e = $(id); e.textContent = on ? 'set' : 'not set';
+    e.style.color = on ? 'var(--good)' : 'var(--muted)';
+    e.style.borderColor = on ? 'var(--good)' : 'var(--line)'; };
+  key('#k-openai', s.keys.OPENAI_API_KEY); key('#k-resend', s.keys.RESEND_API_KEY);
+  key('#k-places', s.keys.GOOGLE_PLACES_API_KEY); key('#k-apify', s.keys.APIFY_API_TOKEN);
+
+  if (!setupFilled) { fillSetup(s); setupFilled = true; }
+  renderJob(s.job);
+}
+
+function fillSetup(s) {
+  const set = (id, v) => { const el = $(id); if (el) el.value = v ?? ''; };
+  set('#s-name', s.sender.name); set('#s-business', s.sender.business_name);
+  set('#s-portfolio', s.sender.portfolio_url); set('#s-phone', s.sender.phone);
+  set('#s-price', s.sender.price);
+  const ec = s.email_channel || {};
+  set('#e-from', ec.from_email); set('#e-reply', ec.reply_to); set('#e-postal', ec.postal_address);
+  const en = $('#e-enabled'); if (en) en.checked = !!s.email_enabled;
+  const badge = $('#email-state');
+  if (badge) {
+    const on = s.email_enabled, ready = on && !(s.email_missing || []).length;
+    badge.textContent = !on ? 'off' : (ready ? 'on' : 'on, incomplete');
+    badge.style.color = !on ? 'var(--muted)' : (ready ? 'var(--good)' : 'var(--warn)');
+    badge.style.borderColor = !on ? 'var(--line)' : (ready ? 'var(--good)' : 'var(--warn)');
+  }
+  set('#s-niches', (s.search.niches || []).join('\n'));
+  set('#s-locations', (s.search.locations || []).join('\n'));
+  set('#s-max', s.search.max_results_per_query); set('#s-source', s.search.source);
+  set('#s-apify-actor', s.search.apify_actor_id);
+  set('#s-minrev', s.qualify.min_review_count);
+  set('#s-minscore', s.qualify.min_lead_score);
+  set('#s-minact', s.qualify.min_activity_score);
+  set('#s-minprob', s.qualify.min_problem_score);
+  set('#s-currency', s.pipeline_currency);
+  $('#setup-dirty').hidden = true;
+}
+function money(amount, currency) {
+  if (amount === null || amount === undefined || amount === '') return '—';
+  const n = Number(amount).toLocaleString(undefined, {maximumFractionDigits: 0});
+  const c = currency || '';
+  return ['$', '£', '€'].includes(c) ? c + n : (c ? n + ' ' + c : n);
+}
+
+// The bar is driven by the stage's own reported position. When a stage cannot
+// know its total (a scraper paging until Google stops), it says so and the bar
+// goes indeterminate rather than inventing a percentage.
+function renderProgress(job) {
+  const box = $('#progress'), p = job?.progress;
+  // Kept on screen after the run so the final count is readable; it only
+  // disappears once a new run starts and clears the last position.
+  if (!p) { box.hidden = true; return; }
+  box.hidden = false;
+
+  const known = Number.isFinite(p.total) && p.total > 0;
+  const pct = known ? Math.min(100, Math.round(p.done / p.total * 100)) : 0;
+  $('#bar').classList.toggle('unknown', !known && job.running);
+  $('#bar-fill').style.width = known ? pct + '%' : (job.running ? '35%' : '100%');
+  if (!job.running) { $('#bar').classList.remove('unknown'); $('#bar-fill').style.width = '100%'; }
+
+  $('#bar-label').textContent = p.label || '';
+  $('#bar-count').textContent = !job.running ? (job.returncode ? 'failed' : 'done')
+    : known ? `${p.done} of ${p.total} · ${pct}%` + (p.eta ? ` · about ${fmtEta(p.eta)} left` : '')
+    : `${p.done} so far`;
+  $('#bar-note').textContent = p.note || '';
+}
+function fmtEta(seconds) {
+  if (seconds < 60) return seconds + 's';
+  const m = Math.round(seconds / 60);
+  return m < 60 ? m + ' min' : Math.round(m / 60) + 'h';
+}
+
+function renderJob(job) {
+  const running = job?.running;
+  $$('[data-run]').forEach(b => b.disabled = running);
+  $('#send-real').disabled = running || !$('#send-confirm').checked;
+  $('#stop').disabled = !running;
+  $('#job-status').textContent = running
+    ? 'running: ' + (job.command || []).join(' ')
+    : (job?.returncode === 0 ? 'finished' : job?.returncode == null ? '' : 'exited ' + job.returncode);
+  if (job?.lines?.length) {
+    const log = $('#log'), atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 40;
+    log.textContent = job.lines.join('\n');
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  }
+  renderProgress(job);
+}
+
+// Exactly one poll in flight and one timer queued. Without the guard every
+// manual refresh() started its own chain and they compounded.
+let polling = false;
+async function refresh() {
+  if (polling) return;
+  polling = true;
+  try { renderState(await api('/api/state')); }
+  catch (e) { /* server restarting; the next tick retries */ }
+  finally {
+    polling = false;
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(refresh, STATE?.job?.running ? 700 : 6000);
+  }
+}
+
+// ------------------------------------------------------------------ run
+
+async function run(command, extra) {
+  try {
+    const res = await post('/api/run', {command, ...extra});
+    if (!res.ok) return toast(res.message);
+    $('#log').textContent = 'starting…';
+    refresh();
+  } catch (e) { toast(e.message); }
+}
+$$('[data-run]').forEach(b => b.onclick = () => {
+  const cmd = b.dataset.run;
+  if (cmd === 'find') return run('find', {
+    niche: $('#find-niche').value.trim() || null,
+    location: $('#find-location').value.trim() || null,
+    max: $('#find-max').value || null,
+  });
+  run(cmd, {});
+});
+$('#send-confirm').onchange = e => $('#send-real').disabled = !e.target.checked || STATE?.job?.running;
+$('#send-real').onclick = () => {
+  const n = $('#send-limit').value;
+  if (!confirm(`Send ${n ? n : 'the whole queued batch of'} real emails now?`)) return;
+  run('send', {confirm: true, limit: n || null});
+};
+$('#stop').onclick = async () => { await post('/api/stop', {}); refresh(); };
+$('#open-queue').onclick = () => window.open('/api/queue', '_blank');
+
+// ---------------------------------------------------------------- leads
+
+// Dates are stored UTC and shown local, because "which day did I find these?"
+// is a question about the user's day. The browser does the conversion.
+function dayLabel(day) {
+  if (!day) return 'unknown date';
+  const today = new Date(); const t = iso => iso.toISOString().slice(0, 10);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  if (day === t(today)) return day + ' · today';
+  if (day === t(yesterday)) return day + ' · yesterday';
+  const d = new Date(day + 'T12:00:00');
+  return day + ' · ' + d.toLocaleDateString(undefined, {weekday: 'long'});
+}
+function clock(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'});
+}
+
+function leadQuery() {
+  const p = new URLSearchParams({
+    status: $('#lead-filter').value,
+    category: $('#lead-category').value,
+    day: $('#lead-day').value,
+  });
+  return p.toString();
+}
+
+let leadFiltersFilled = false;
+
+async function loadLeads() {
+  const mode = $('#lead-group').value;
+  // The filter dropdowns list only days and categories that exist, so the UI
+  // can never offer a filter that returns nothing.
+  const groups = await api('/api/groups?' + leadQuery());
+  if (!leadFiltersFilled) {
+    fillLeadFilters(groups);
+    leadFiltersFilled = true;
+  }
+  if (mode === 'date') return renderGroups(groups.by_day, 'day', 'Found on', dayLabel);
+  if (mode === 'category') return renderGroups(groups.by_category, 'category', 'Category', x => x);
+  return renderLeadRows();
+}
+
+function fillLeadFilters(groups) {
+  const keep = (sel, values, allLabel) => {
+    const current = $(sel).value;
+    $(sel).innerHTML = `<option value="ALL">${allLabel}</option>` +
+      values.map(v => `<option value="${esc(v)}">${esc(sel === '#lead-day' ? dayLabel(v) : v)}</option>`).join('');
+    if ([...$(sel).options].some(o => o.value === current)) $(sel).value = current;
+  };
+  keep('#lead-day', groups.days || [], 'Any day');
+  keep('#lead-category', groups.categories || [], 'Any category');
+}
+
+function renderGroups(rows, key, heading, label) {
+  const t = $('#leads-table');
+  $('#lead-count').textContent = rows.length + ' group' + (rows.length === 1 ? '' : 's');
+  if (!rows.length) { t.innerHTML = '<tr><td class="muted">Nothing here yet.</td></tr>'; return; }
+  const widest = Math.max(1, ...rows.map(r => r.found));
+  t.innerHTML = `<thead><tr><th>${heading}</th><th>Found</th><th>Qualified</th>
+      <th>Contacted</th><th>Avg score</th><th></th></tr></thead><tbody>` +
+    rows.map(r => `<tr class="clickable" data-${key}="${esc(r[key])}">
+      <td><b>${esc(label(r[key]))}</b></td>
+      <td>${r.found}</td>
+      <td>${r.qualified || 0}</td>
+      <td>${r.contacted || 0}</td>
+      <td>${r.avg_score === null || r.avg_score === undefined ? '—' : Math.round(r.avg_score)}</td>
+      <td style="width:34%"><span class="track" style="display:block;height:14px;
+        background:var(--bg);border:1px solid var(--line);border-radius:5px;overflow:hidden">
+        <i style="display:block;height:100%;background:var(--accent);opacity:.75;
+           width:${Math.round(r.found / widest * 100)}%"></i></span></td>
+    </tr>`).join('') + '</tbody>';
+  // Clicking a group drills into it rather than being decoration.
+  $$('#leads-table tr.clickable').forEach(tr => tr.onclick = () => {
+    $(key === 'day' ? '#lead-day' : '#lead-category').value = tr.dataset[key];
+    $('#lead-group').value = 'lead';
+    loadLeads();
+  });
+}
+
+async function renderLeadRows() {
+  const rows = await api('/api/leads?' + leadQuery());
+  const t = $('#leads-table');
+  $('#lead-count').textContent = rows.length + ' lead' + (rows.length === 1 ? '' : 's');
+  if (!rows.length) { t.innerHTML = '<tr><td class="muted">Nothing matches those filters.</td></tr>'; return; }
+
+  const COLS = 8;
+  let day = null;
+  const body = rows.map(r => {
+    // A heading row each time the date changes, so a long list reads as the
+    // batches it actually came in rather than one undifferentiated pile.
+    let head = '';
+    if (r.day !== day) {
+      day = r.day;
+      const n = rows.filter(x => x.day === day).length;
+      head = `<tr class="dayhead"><td colspan="${COLS}">${esc(dayLabel(day))}
+        <span class="muted">${n} lead${n === 1 ? '' : 's'} found</span></td></tr>`;
+    }
+    return head + `<tr class="clickable" data-id="${r.id}">
+      <td><b>${esc(r.name)}</b><br><span class="muted">${esc(r.city || '')}</span></td>
+      <td class="muted" style="font-size:12.5px">${esc(r.group_category || '—')}</td>
+      <td>${r.lead_grade ? `<span class="grade ${r.lead_grade}">${r.lead_grade}</span>
+            <span class="muted" style="font-size:12px"> ${r.lead_score}</span>` : '<span class="muted">—</span>'}</td>
+      <td>${r.lead_type ? `<span class="tag ${r.lead_type}">${r.lead_type === 'NO_SITE' ? 'no website' : 'weak site'}</span>` : ''}</td>
+      <td class="muted" style="font-size:12.5px">${esc(r.headline_issue || (r.score ? r.score + ' pts' : '—'))}</td>
+      <td>${(r.gaps || []).length
+            ? (r.gaps || []).map(g => `<span class="gap">${esc(g)}</span>`).join('')
+            : '<span class="muted">—</span>'}</td>
+      <td><span class="tag ${r.status}">${r.status}</span>${
+            r.status === 'SKIPPED' && r.skip_reason
+              ? `<br><span class="muted" style="font-size:11.5px">${esc(r.skip_reason)}</span>` : ''}${
+            r.pipeline_stage
+              ? `<br><span class="muted" style="font-size:11.5px">${esc((STATE?.stage_labels || {})[r.pipeline_stage] || r.pipeline_stage)}${
+                   r.won_amount ? ' · ' + money(r.won_amount, STATE?.pipeline_currency) : ''}</span>` : ''}</td>
+      <td class="when">found ${clock(r.created_at)}${
+            r.audited_at ? '<br>audited ' + clock(r.audited_at) : ''}</td>
+    </tr>`;
+  }).join('');
+
+  t.innerHTML = `<thead><tr><th>Business</th><th>Category</th><th>Lead</th><th>Type</th>
+      <th>Broken</th><th>Missing</th><th>Status</th><th>When</th></tr></thead><tbody>${body}</tbody>`;
+  $$('#leads-table tr.clickable').forEach(tr => tr.onclick = () => openLead(tr.dataset.id));
+}
+['#lead-filter', '#lead-group', '#lead-day', '#lead-category']
+  .forEach(id => $(id).onchange = loadLeads);
+$('#refresh-leads').onclick = () => { leadFiltersFilled = false; loadLeads(); };
+
+async function openLead(id) {
+  const d = await api('/api/lead/' + id);
+  $('#lead-modal-body').innerHTML = `
+    <h2 style="margin:0 0 4px">${esc(d.name)}</h2>
+    <p class="muted" style="margin:0 0 14px">${esc(d.category || '')}${d.address ? ' · ' + esc(d.address) : ''}</p>
+    <div class="kv">
+      <div>Status</div><div>${d.status}${d.skip_reason ? ' — ' + esc(d.skip_reason) : ''}</div>
+      <div>Website</div><div>${d.website ? `<a href="${esc(d.website)}" target="_blank" rel="noopener">${esc(d.website)}</a>` : '<span class="good">none — best kind of lead</span>'}</div>
+      <div>Phone</div><div>${esc(d.phone || '—')}</div>
+      <div>Email</div><div>${esc((d.contacts.find(c => c.kind === 'email') || {}).value || '—')}</div>
+      <div>Google</div><div>${d.rating ? d.rating + '★ (' + d.review_count + ')' : '—'}</div>
+      <div>Found</div><div>${esc(dayLabel(d.found_day))} at ${clock(d.created_at)}</div>
+    </div>
+    ${verdictHtml(d.verdict)}
+    ${d.issues.length ? '<b style="font-size:13px">Technically broken</b><ul class="issues">' +
+      d.issues.map(i => `<li>${esc(i)}</li>`).join('') + '</ul>' : ''}
+    ${d.gaps.length ? '<b style="font-size:13px">Cannot do for a customer</b><ul class="issues">' +
+      d.gaps.map(i => `<li>${esc(i)}</li>`).join('') + '</ul>' : ''}
+    ${d.messages.map(m => `<b style="font-size:13px">${m.channel === 'whatsapp' ? 'WhatsApp' : 'Email'} draft</b>
+      <pre class="log" style="margin:6px 0 12px">${esc(m.body)}</pre>`).join('')}
+    ${timelineHtml(d.timeline)}
+    <b style="font-size:13px">Where this deal actually is${d.pipeline
+      ? ' — <span class="good">' + esc((STATE?.stage_labels || {})[d.pipeline.stage] || d.pipeline.stage) + '</span>' : ''}</b>
+    <p class="muted" style="margin:3px 0 9px;font-size:12.5px">Record each step as it happens. This, not the lead count, is what adds up to money.</p>
+    <div class="row" style="margin-bottom:12px">
+      <button class="ghost" onclick="stage(${d.id},'CONTACTED')">Conversation started</button>
+      <button class="ghost" onclick="stage(${d.id},'PROPOSAL_REQUESTED')">They asked for a proposal</button>
+      <button class="ghost" onclick="stage(${d.id},'QUOTED',true)">I sent a quote…</button>
+      <button class="act" onclick="stage(${d.id},'WON',true)">Won…</button>
+      <button class="ghost danger" onclick="stage(${d.id},'LOST')">Lost</button>
+    </div>
+    <div class="row">
+      <button class="ghost" onclick="mark(${d.id},'REPLIED')">They replied — stop contacting</button>
+      <button class="ghost danger" onclick="suppressLead(${d.id})">Never contact again</button>
+    </div>`;
+  $('#lead-modal').showModal();
+}
+// Built from the timestamps each stage already writes, not a separate event
+// log, so it cannot drift out of step with what actually happened.
+function timelineHtml(events) {
+  if (!events || !events.length) return '';
+  return '<b style="font-size:13px">History</b><ol class="timeline">' +
+    events.map(e => `<li><span>${esc(e.day)} ${clock(e.at)}</span>${esc(e.what)}</li>`).join('') +
+    '</ol>';
+}
+
+function verdictHtml(v) {
+  if (!v) return '';
+  const c = v.components || {};
+  const bars = [
+    ['Active business', c.activity, 30],
+    ['Demonstrated problem', c.problem, 30],
+    ['Can plausibly pay', c.ability_to_pay, 25],
+    ['You could build it', c.deliverable, 15],
+  ].map(([label, value, max]) => `<div class="f">
+      <span>${label}</span>
+      <span class="track"><i style="width:${Math.round((value || 0) / max * 100)}%"></i></span>
+      <span class="muted">${value ?? 0} / ${max}</span>
+    </div>`).join('');
+  return `<b style="font-size:13px">Why this scored ${v.total}/100
+      <span class="grade ${v.grade}">${v.grade}</span></b>
+    <div class="funnel" style="margin:8px 0 10px">${bars}</div>
+    ${(v.reasons || []).length ? '<ul class="issues">' +
+      v.reasons.map(r => `<li>${esc(r)}</li>`).join('') + '</ul>' : ''}
+    ${(v.blockers || []).length ? '<ul class="issues warn">' +
+      v.blockers.map(r => `<li>${esc(r)}</li>`).join('') + '</ul>' : ''}`;
+}
+
+// Quoted and won ask for the number. A deal recorded without one makes the
+// revenue figure quietly wrong, which is worse than having no figure.
+async function stage(id, stageName, needsAmount) {
+  let amount = null;
+  if (needsAmount) {
+    const typed = prompt(stageName === 'WON'
+      ? 'What did they actually pay? (numbers only)'
+      : 'What did you quote? (numbers only)');
+    if (typed === null) return;
+    amount = parseFloat(String(typed).replace(/[^0-9.]/g, ''));
+    if (!isFinite(amount)) return toast('That was not a number — nothing recorded');
+  }
+  let reason = null;
+  if (stageName === 'LOST') reason = prompt('Why was it lost? (optional)') || null;
+  await post('/api/stage', {ids: [id], stage: stageName, amount, reason});
+  $('#lead-modal').close();
+  toast('Recorded'); loadLeads(); refresh();
+}
+
+async function mark(id, status) {
+  await post('/api/lead-status', {ids: [id], status});
+  $('#lead-modal').close(); toast('Marked ' + status.toLowerCase()); loadLeads(); refresh();
+}
+async function suppressLead(id) {
+  const d = await api('/api/lead/' + id);
+  const value = (d.contacts.find(c => c.kind === 'email') || {}).value || d.phone;
+  if (!value) return toast('No address or number on file');
+  await post('/api/suppress', {value, reason: 'asked to stop'});
+  await post('/api/lead-status', {ids: [id], status: 'SKIPPED', reason: 'asked to stop'});
+  $('#lead-modal').close(); toast('Suppressed'); loadLeads(); refresh();
+}
+
+// ------------------------------------------------------------- messages
+
+async function loadMessages() {
+  const rows = await api(`/api/messages?channel=${$('#msg-channel').value}&status=${$('#msg-status').value}`);
+  $('#msg-list').innerHTML = rows.length ? rows.map(m => `
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <b>${esc(m.business_name)}</b>
+        <span class="tag">${m.channel}</span>
+        <span class="tag ${m.status}">${m.status}</span>
+        <span class="muted" style="font-size:12.5px">${m.to_value ? esc((m.channel === 'whatsapp' ? '+' : '') + m.to_value) : ''}</span>
+        ${m.channel === 'whatsapp' && m.wa_link
+          ? `<a class="ghost" style="margin-left:auto;text-decoration:none" href="${esc(m.wa_link)}" target="_blank" rel="noopener">Open in WhatsApp</a>` : ''}
+      </div>
+      ${m.channel === 'email'
+        ? `<div class="field"><label>Subject</label><input data-subject="${m.id}" value="${esc(m.subject)}"></div>` : ''}
+      <textarea class="msg" data-body="${m.id}">${esc(m.body)}</textarea>
+      <div class="row" style="margin-top:9px">
+        <button class="ghost" data-save="${m.id}">Save edit</button>
+        ${m.channel === 'whatsapp' && m.status === 'DRAFT'
+          ? `<button class="ghost" data-sent="${m.lead_id}">Mark as sent</button>` : ''}
+      </div>
+    </div>`).join('') : '<div class="card muted">No drafts. Run steps 1–3 first.</div>';
+
+  $$('[data-save]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.save;
+    const subj = $(`[data-subject="${id}"]`);
+    await post('/api/message', {id: +id, subject: subj ? subj.value : null,
+      body: $(`[data-body="${id}"]`).value});
+    toast('Saved');
+  });
+  $$('[data-sent]').forEach(b => b.onclick = async () => {
+    await post('/api/lead-status', {ids: [+b.dataset.sent], status: 'SENT'});
+    toast('Marked sent'); loadMessages(); refresh();
+  });
+}
+$('#msg-channel').onchange = loadMessages;
+$('#msg-status').onchange = loadMessages;
+$('#refresh-msgs').onclick = loadMessages;
+
+// ------------------------------------------------------------- pipeline
+
+let dealFilterFilled = false;
+
+async function loadPipeline() {
+  const data = await api('/api/pipeline?stage=' +
+    encodeURIComponent($('#deal-filter').value || 'ALL'));
+  const r = data.revenue, cur = data.currency;
+
+  $('#money').innerHTML = `
+    <div><b>${money(r.won_total, cur)}</b>won from ${r.won_count} deal${r.won_count === 1 ? '' : 's'}</div>
+    <div><b>${money(r.open_total, cur)}</b>quoted and still live</div>
+    <div><b>${r.won_count ? money(r.avg_deal, cur) : '—'}</b>average deal</div>
+    <div><b>${r.funnel.CONTACTED ? r.close_rate.toFixed(0) + '%' : '—'}</b>of conversations closed</div>`;
+
+  // Each bar is scaled against the widest stage, so the shape of the drop-off
+  // is visible rather than four nearly identical bars.
+  const widest = Math.max(1, ...data.stages.filter(x => x !== 'LOST').map(x => r.funnel[x] || 0));
+  let previous = null;
+  $('#funnel').innerHTML = data.stages.filter(x => x !== 'LOST').map(st => {
+    const n = r.funnel[st] || 0;
+    const rate = previous ? Math.round(n / previous * 100) + '% of previous' : '';
+    previous = n || previous;
+    return `<div class="f">
+      <span>${esc(data.labels[st] || st)}</span>
+      <span class="track"><i style="width:${Math.round(n / widest * 100)}%"></i></span>
+      <span class="muted">${n}${rate ? ' · ' + rate : ''}</span>
+    </div>`;
+  }).join('') + (r.funnel.LOST ? `<div class="f"><span class="muted">lost</span>
+      <span class="track"></span><span class="muted">${r.funnel.LOST}</span></div>` : '');
+
+  if (!dealFilterFilled) {
+    $('#deal-filter').innerHTML = '<option value="ALL">All stages</option>' +
+      data.stages.map(st => `<option value="${st}">${esc(data.labels[st] || st)}</option>`).join('');
+    dealFilterFilled = true;
+  }
+
+  const t = $('#deals-table');
+  t.innerHTML = data.deals.length
+    ? `<thead><tr><th>Business</th><th>Stage</th><th>Quoted</th><th>Won</th>
+         <th>Lead</th><th>Updated</th></tr></thead><tbody>` +
+      data.deals.map(d => `<tr class="clickable" data-id="${d.lead_id}">
+        <td><b>${esc(d.name)}</b><br><span class="muted">${esc(d.city || '')}</span></td>
+        <td><span class="tag">${esc(data.labels[d.stage] || d.stage)}</span></td>
+        <td>${money(d.quote_amount, cur)}</td>
+        <td>${d.won_amount ? '<b>' + money(d.won_amount, cur) + '</b>' : '—'}</td>
+        <td>${d.lead_grade ? `<span class="grade ${d.lead_grade}">${d.lead_grade}</span>` : '—'}</td>
+        <td class="muted">${esc((d.updated_at || '').slice(0, 10))}</td>
+      </tr>`).join('') + '</tbody>'
+    : `<tr><td class="muted">Nothing recorded yet. Open a lead and mark what
+         actually happened — that is what fills this in.</td></tr>`;
+  $$('#deals-table tr.clickable').forEach(tr => tr.onclick = () => openLead(tr.dataset.id));
+}
+$('#deal-filter').onchange = loadPipeline;
+$('#refresh-pipeline').onclick = loadPipeline;
+
+// ---------------------------------------------------------------- setup
+
+$('#save-sender').onclick = async () => {
+  await post('/api/config', {updates: {
+    'sender.name': $('#s-name').value.trim(),
+    'sender.business_name': $('#s-business').value.trim(),
+    'sender.portfolio_url': $('#s-portfolio').value.trim(),
+    'sender.phone': $('#s-phone').value.trim(),
+    'sender.price': $('#s-price').value.trim(),
+  }});
+  setupFilled = false; toast('Saved'); refresh();
+};
+$('#reload-setup').onclick = async () => {
+  setupFilled = false; await refresh(); toast('Reloaded from your config file');
+};
+$('#save-email').onclick = async () => {
+  await post('/api/config', {updates: {
+    'email_channel.enabled': $('#e-enabled').checked,
+    'email_channel.from_email': $('#e-from').value.trim(),
+    'email_channel.reply_to': $('#e-reply').value.trim(),
+    'email_channel.postal_address': $('#e-postal').value.trim(),
+  }});
+  setupFilled = false; toast('Saved'); refresh();
+};
+$('#save-search').onclick = async () => {
+  const lines = id => $(id).value.split('\n').map(s => s.trim()).filter(Boolean);
+  await post('/api/config', {updates: {
+    'search.niches': lines('#s-niches'),
+    'search.locations': lines('#s-locations'),
+    'search.max_results_per_query': +$('#s-max').value || 60,
+    'search.source': $('#s-source').value,
+    'search.apify.actor_id': $('#s-apify-actor').value.trim(),
+    'qualify.min_review_count': +$('#s-minrev').value || 0,
+  }});
+  setupFilled = false; toast('Saved'); refresh();
+};
+$('#save-qualify').onclick = async () => {
+  const clamp = (id, max, fallback) => {
+    const v = +$(id).value;
+    return Number.isFinite(v) && v >= 0 && v <= max ? v : fallback;
+  };
+  await post('/api/config', {updates: {
+    'qualify.min_lead_score': clamp('#s-minscore', 100, 55),
+    'qualify.min_activity_score': clamp('#s-minact', 30, 12),
+    'qualify.min_problem_score': clamp('#s-minprob', 30, 10),
+    'pipeline.currency': $('#s-currency').value.trim(),
+  }});
+  setupFilled = false; toast('Saved'); refresh();
+};
+$('#save-keys').onclick = async () => {
+  const keys = {};
+  const grab = (id, name) => { const v = $(id).value.trim(); if (v) keys[name] = v; };
+  grab('#key-openai', 'OPENAI_API_KEY');
+  grab('#key-resend', 'RESEND_API_KEY');
+  grab('#key-places', 'GOOGLE_PLACES_API_KEY');
+  grab('#key-apify', 'APIFY_API_TOKEN');
+  if (!Object.keys(keys).length) return toast('Nothing to save');
+  await post('/api/keys', {keys});
+  ['#key-openai', '#key-resend', '#key-places', '#key-apify'].forEach(id => $(id).value = '');
+  toast('Keys saved'); refresh();
+};
+
+// Any edit flags the form; the poll never touches these fields, so the only
+// thing that can overwrite them now is an explicit Save or Reload.
+const SETUP_FIELDS = ['#s-name','#s-business','#s-portfolio','#s-phone','#s-price',
+  '#e-from','#e-reply','#e-postal','#s-niches','#s-locations','#s-max','#s-source',
+  '#s-apify-actor','#s-minrev','#s-minscore','#s-minact','#s-minprob','#s-currency'];
+SETUP_FIELDS.forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener('input', () => $('#setup-dirty').hidden = false);
+});
+
+refresh();
+</script>
+</body>
+</html>

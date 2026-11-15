@@ -1,0 +1,195 @@
+# ============================================================
+# TEMPLATE — this file is committed to git. Do not put your details here.
+# Copy it to config.local.yaml (gitignored) and edit that copy instead:
+#     cp config.yaml config.local.yaml
+# Secrets (API keys) live in .env, not in either file.
+# ============================================================
+
+# --- You. Goes into every message. ---
+sender:
+  # The only thing you actually have to fill in. Your first name is fine.
+  name: "Your Name"
+
+  # Everything below is optional. Leave blank and the messages simply read as
+  # one person offering to build a website, which is what you are.
+  business_name: ""          # only if you actually trade under a name
+  portfolio_url: ""          # a link to work you've done, if you have one
+  phone: ""                  # if you want them to be able to call you
+
+  # Optional. A concrete number gets fewer replies but better ones, because
+  # people who reply already accepted the price. Examples: "$300", "around 250".
+  price: ""
+
+# --- Email. Off by default: it needs a domain and a real postal address. ---
+# WhatsApp needs none of this, so you can ignore the whole block and still work.
+email_channel:
+  enabled: false
+  # A domain you own. Not your personal Gmail — cold mail from a free address
+  # goes to spam, and sending from a domain you don't control will not work.
+  from_email: ""
+  reply_to: ""
+  # US CAN-SPAM requires a real postal address in commercial email, including
+  # from individuals. A home address or a cheap PO box both count. This is the
+  # reason email is off by default: WhatsApp has no equivalent requirement.
+  postal_address: ""
+
+# --- What you're looking for ---
+search:
+  # One search runs per (niche x location) pair.
+  niches:
+    - laundromat
+    - nail salon
+    - auto detailing
+  locations:
+    - Austin, TX
+  max_results_per_query: 25
+  # auto | places_api | apify | gosom | scraper
+  #   places_api  Google Places API. The supported default: structured, stable,
+  #               and it returns websiteUri, which is the field this whole
+  #               campaign turns on. Needs a key.
+  #   apify       Run an Apify Actor and read its dataset. Reaches things the
+  #               Places API does not, and lets an Actor you already pay for
+  #               feed this pipeline. Billed by Apify, so never picked by auto.
+  #   gosom       gosom/google-maps-scraper (MIT, Go). Maintained, so it survives
+  #               Google's markup changes better than ours. Needs `make install-gosom`.
+  #   scraper     Built-in Playwright scraper. No extra tooling, most brittle.
+  #   auto        places_api if a key is set, else gosom if built, else scraper.
+  source: "auto"
+
+  # Only read when source is "apify". Needs APIFY_API_TOKEN in .env.
+  apify:
+    # username~actor-name, as the Apify API spells it. The default is the
+    # widely used Google Maps Actor.
+    actor_id: "compass~crawler-google-places"
+    # Which input field carries the search text, and which caps the results.
+    # Different Actors name these differently; these two are correct for the
+    # default Actor. Set max_field to "" for an Actor that has no such cap.
+    query_field: "searchStringsArray"
+    max_field: "maxCrawledPlacesPerSearch"
+    # Anything else the Actor takes. The search query is always written over
+    # the top of this, so a query left in here cannot silently hijack a run.
+    input: {}
+    # Give up waiting after this long. The run itself keeps going on Apify.
+    timeout_seconds: 900
+    poll_seconds: 5
+    memory_mbytes: null
+    # Set to re-import a run you already paid for, instead of starting a new
+    # one. Find it in the Apify console under the run's Dataset tab.
+    dataset_id: ""
+
+  gosom:
+    # Leave blank to look in ./bin/, then $GOSOM_BINARY, then $PATH.
+    binary: ""
+    # 0 = size the scroll depth to max_results_per_query. Scrolling deeper than
+    # the cap scrapes results that are then thrown away, which is slow.
+    # Set a number only to override.
+    depth: 0
+    concurrency: 4
+    lang: "en"
+    # Visit each business's site during discovery to pull addresses. Slower, and
+    # the audit stage harvests emails anyway, so off by default.
+    extract_email: false
+    timeout_seconds: 900
+
+# --- What counts as a lead ---
+# Having no website is not a qualification. A closed shop with two reviews also
+# has no website. Every lead is scored out of 100 across four dimensions and
+# has to clear three bars, so the ones that survive are businesses that are
+# trading, have a demonstrable problem, can plausibly pay, and need something
+# one person can actually build. See prospector/qualify.py.
+qualify:
+  # Which kinds of lead to consider at all.
+  include_no_site: true
+  include_bad_site: true
+
+  # The bars. Raise min_lead_score to get fewer, better leads.
+  #   total     out of 100
+  #   activity  out of 30 — reviews, rating, a working phone
+  #   problem   out of 30 — technical defects plus missing commercial capability
+  min_lead_score: 55
+  min_activity_score: 12
+  min_problem_score: 10
+
+  # Skip businesses under this review count before a single request is spent.
+  min_review_count: 3
+  # Skip chains and franchises by name match.
+  exclude_name_patterns:
+    - "McDonald"
+    - "Starbucks"
+    - "Subway"
+    - "Walmart"
+
+  # Ability to pay, by trade. Matched as substrings against the category, the
+  # niche you searched for, and the business name. Leave a list out entirely to
+  # use the built-in defaults in prospector/qualify.py.
+  # high_value_categories: ["plumb", "roof", "dentist"]
+  # low_value_categories: ["laundromat", "vending"]
+  # Businesses one person cannot realistically deliver for. Scored to zero on
+  # the deliverable dimension, which disqualifies them outright.
+  # undeliverable_patterns: ["hospital", "university", "government"]
+
+  # Legacy. The audit score still feeds the problem dimension above; this
+  # standalone threshold no longer decides anything on its own.
+  bad_site_threshold: 4
+
+# --- Sales pipeline ---
+# Leads collected is a vanity number. What matters is how many conversations
+# turned into quotes and how many quotes turned into money, which is what
+# `pipeline` and `funnel` record. Nothing here is inferred — you type it.
+pipeline:
+  # Shown next to every amount. A symbol ($, £, €) or a code (USD, AED).
+  currency: "$"
+
+# --- Message drafting ---
+llm:
+  provider: "openai"        # openai | anthropic
+  model: "gpt-4o-mini"      # swap freely; anthropic e.g. claude-haiku-4-5-20251001
+  temperature: 0.7
+  # Rate limits and provider blips are waited out rather than failing the whole
+  # batch. Billing and bad-key errors are not retried — those need you, not time.
+  max_retries: 4
+  retry_base_seconds: 2
+  # The ask at the end of every message. Default: a soft offer, no calendar link.
+  call_to_action: "offer to build them a free sample page first so they can see it before deciding"
+  # Hard style rules handed to the model with every draft.
+  style_rules:
+    - "Under 70 words. Short lines. Get to the point in the first sentence."
+    - "You are ONE PERSON who builds websites, not a company. Never say 'we', 'our team', or 'our agency'. Always 'I'."
+    - "Write like a text message to a stranger you respect. Plain words. No corporate phrasing."
+    - "Reference one concrete, specific detail about THIS business."
+    - "Never claim experience, clients, years in business, or results you were not given."
+    - "No 'I hope this finds you well', no 'in today's digital landscape', no buzzwords."
+    - "End with one easy question they can answer with a yes."
+
+# --- Email sending mechanics ---
+email:
+  # Dry run is the default everywhere. `send --yes` is what actually sends.
+  subject_max_chars: 60
+  unsubscribe_line: "Not interested? Reply STOP and I won't email again."
+  # Per-run cap: a safety limit on top of any throttling you do by hand.
+  default_batch_size: 25
+  # Seconds between sends.
+  delay_seconds: 8
+
+# --- WhatsApp (wa.me click-to-send queue) ---
+whatsapp:
+  enabled: true
+  # The country is worked out from each lead's own address, so you never set it
+  # per campaign. This is only a fallback for a location that can't be
+  # recognised — an ISO country code like "AE", "US", "GB". Leave blank to skip
+  # those leads instead of guessing: a wrong number means texting a stranger.
+  default_region: ""
+  # Written here, opened in your browser.
+  queue_file: "out/whatsapp_queue.html"
+
+# --- Site audit ---
+audit:
+  timeout_seconds: 15
+  # Render each site in a mobile viewport to catch layout breakage.
+  # Slower (~3s/site) but catches what HTTP alone cannot.
+  use_playwright: true
+  # A browser UA, because the question is what a real visitor sees. Sites that
+  # still block the request are reported as inconclusive, never as broken.
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+database: "prospector.db"
