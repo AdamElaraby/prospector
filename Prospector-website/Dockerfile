@@ -7,7 +7,9 @@ ENV PYTHONUNBUFFERED=1 \
     PROSPECTOR_DATA_DIR=/data
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -r requirements.txt \
     && python -m playwright install --with-deps chromium \
     && useradd --uid 10001 --create-home prospector \
     && install -d -o prospector -g prospector /data
